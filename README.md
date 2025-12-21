@@ -15,5 +15,5 @@
   1. To prepare for expandability, the existing UART communication method will be **replaced with a CAN BUS configuration.**
   2. Client authentication system scheduled to be introduced for security
 
-## WIKI
+## Docs
 - [WIKIPAGE](https://github.com/BKAELAB/tsw_bringup_f103rb/wiki)
