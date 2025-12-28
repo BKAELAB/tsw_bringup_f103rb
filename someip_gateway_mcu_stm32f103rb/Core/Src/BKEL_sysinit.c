@@ -100,7 +100,7 @@ void system_init(void)
 	BKEL_CLK_Init();
 	BKEL_GPIO_Init();
 	MX_USART2_UART_Init();
-	MX_ADC1_Init();
+//	MX_ADC1_Init();
 	BKEL_PWM_Init();
 }
 
@@ -227,6 +227,7 @@ static void BKEL_GPIO_Init(void)
 	/* PC0: GPIO_PIN_INPUT */
 	GPIOC->CRL &= ~(BIT_CLEAR << (GPIO_PIN_INPUT * 4));
 	GPIOC->CRL |= (BKEL_INPUT_PULL << (GPIO_PIN_INPUT * 4));
+	GPIOC->ODR = (1U << 0);		// SET PULL-UP
 	/* PC1: GPIO_PIN_OUTPUT */
 	GPIOC->CRL &= ~(BIT_CLEAR << (GPIO_PIN_OUTPUT * 4));
 	GPIOC->CRL |= (BKEL_OUTPUT_PULL << (GPIO_PIN_OUTPUT * 4));
