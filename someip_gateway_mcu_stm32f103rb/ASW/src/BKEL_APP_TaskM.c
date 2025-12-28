@@ -52,6 +52,9 @@ void f_sendPeriodAdvertiseTask(void)
 
 #if USE_FEATURE_TEST	// Test Code Here
 		AppPwmTest();	// For PWM Test Code.
+		GPIOA->BSRR |= (1U << 5);
+		GPIOC->BSRR |= (1U << 1);
+		uint8_t PC0_VALUE = GPIOC->IDR & 1 ;
 #endif
 		vTaskDelay(pdMS_TO_TICKS(5000));	// 5s
 	}
