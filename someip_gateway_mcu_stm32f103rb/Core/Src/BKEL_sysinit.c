@@ -6,6 +6,25 @@
  */
 #include "main.h"
 
+/* DEFINES For CLOCK */
+/* FLASH 설정 */
+#define FLASH_LATENCY_2WS         (0x2U)        // Two wait states, if 48 MHz < SYSCLK <= 72 MHz
+
+/* RCC CFGR 비트 */
+#define RCC_CFGR_PLLSRC_HSE       (1U << 16)
+#define RCC_CFGR_PLLMUL9          (7U << 18)    // PLL x9 (7 = 9 - 2)
+
+/* BIT CLEAR */
+#define FLASH_LATENCY_CLEAR		  (0x7 << 0)	// 3-bit clear
+#define RCC_CFGR_PLLSRC_CLEAR     (1U << 16)
+#define RCC_CFGR_PLLMUL_CLEAR     (0xFU << 18)
+#define RCC_CFGR_HPRE_CLEAR       (0xFU << 4)
+#define RCC_CFGR_PPRE1_CLEAR      (0x7U << 8)
+#define RCC_CFGR_PPRE2_CLEAR      (0x7U << 11)
+#define RCC_CFGR_SW_CLEAR         (0x3U << 0)
+#define RCC_CFGR_SWS_CLEAR        (0x3U << 2)
+
+
 /* DEFINES For PWM & TIMER */
 /* TIMER & CLK*/
 #define	TIM_PSC_VALUE_72	(72U - 1U)
@@ -27,7 +46,10 @@
 ADC_HandleTypeDef hadc1;
 UART_HandleTypeDef huart2;
 
-void SystemClock_Config(void);
+// 25.12.28 Hwang SeokJUN
+static void BKEL_CLK_Init(void);
+
+//void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
@@ -48,7 +70,8 @@ int _write(int file, char *ptr, int len)
 void system_init(void)
 {
 	HAL_Init();
-	SystemClock_Config();
+	// SystemClock_Config();
+	BKEL_CLK_Init();
 	MX_GPIO_Init();
 	MX_USART2_UART_Init();
 	MX_ADC1_Init();
@@ -61,48 +84,87 @@ void system_init(void)
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void)
+
+static void BKEL_CLK_Init(void)
 {
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+	// FLASH Latency 설정 (72MHz를 위해 2 Wait State 필수)
+	FLASH->ACR |= (FLASH_ACR_PRFTBE);				// // Prefetch buffer enable
+	FLASH->ACR &= ~(FLASH_LATENCY_CLEAR);           // Latency 비트 초기화
+	FLASH->ACR |= (FLASH_LATENCY_2WS);              // 2 Wait States
+												    // MCU가 플래시 메모리로부터 명령어 또는 데이터를 읽을 때, 2클럭만큼 기다린 뒤 값을 사용
 
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	RCC->CR |= (RCC_CR_HSEON);  					// HSEON (HSE Clock enable)
+	while (!(RCC->CR & (RCC_CR_HSERDY)));    		// HSE 오실레이터가 안정되었음을 나타내기 위해 하드웨어에 의해 설정
+	    											// Oscillator(오실레이터): 주기적인 신호(사인파, 사각파)를 생성하는 장치
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+	// PLL 설정,  72 MHz maximum frequency (datasheet 1p)
+	RCC->CFGR &= ~((RCC_CFGR_PLLSRC_HSE) | (RCC_CFGR_PLLMUL_CLEAR)); 			// PLLSRC , PLLMUL 0으로 초기화
+    RCC->CFGR |= (RCC_CFGR_PLLSRC_HSE);                  						// PLLSRC : PREDIV1 -> 103RB 보드에 없음. HSE로 사용
+    RCC->CFGR |= (RCC_CFGR_PLLMUL9);                  							// PLLMUL : PLL input clock x 9
+	    										 	 	 	 	 	 	 	 	// HSE = 8 MHz, PLLMUL = x9 → PLLCLK = 72 MHz
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV2;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
-  {
-    Error_Handler();
-  }
+    // HPRE (AHB prescaler)
+    RCC->CFGR &= ~(RCC_CFGR_HPRE_CLEAR);            // HPRE bit clear
 
+	// PPRE1 (APB Low-speed prescaler (APB1))
+    RCC->CFGR &= ~(RCC_CFGR_PPRE1_CLEAR);           // PPRE1 초기화
+    RCC->CFGR |= (RCC_CFGR_PPRE1_DIV2);             // HCLK divided by 2
 
+    // PPRE2 (APB high-speed prescaler (APB2)
+    RCC->CFGR &= ~(RCC_CFGR_PPRE2_CLEAR);    		// PPRE2 초기화
+    RCC->CFGR |= (RCC_CFGR_PPRE2_DIV1);				// HCLK not divided
+
+    // PLL 활성화
+    RCC->CR |= (RCC_CR_PLLON);               		// PLLON
+    while (!(RCC->CR & (RCC_CR_PLLRDY)));    		// PLLRDY
+
+    // SW (System clock Switch)
+    // HSE는 PLL의 입력 클럭 역할, PLL은 실제로 시스템 전체를 구동하는 SYSCLK을 제공
+    RCC->CFGR &= ~(RCC_CFGR_SW_CLEAR);           								// SW 초기화
+    RCC->CFGR |= (RCC_CFGR_SW_PLL);            									// PLL selected as system clock
+    while ((RCC->CFGR & (RCC_CFGR_SWS_CLEAR)) != (RCC_CFGR_SWS_PLL));			// 시스템 클럭이 실제로 PLL로 바뀌었는지 확인
 }
+
+//void SystemClock_Config(void)
+//{
+//  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+//  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+//  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+//
+//  /** Initializes the RCC Oscillators according to the specified parameters
+//  * in the RCC_OscInitTypeDef structure.
+//  */
+//  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+//  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+//  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+//  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+//  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
+//  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
+//  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//
+//  /** Initializes the CPU, AHB and APB buses clocks
+//  */
+//  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+//                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+//  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+//  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+//  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+//  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+//
+//  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+//  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV2;
+//  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//}
 
 /**
   * @brief ADC1 Initialization Function
