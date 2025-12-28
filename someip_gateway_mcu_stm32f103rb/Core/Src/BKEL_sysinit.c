@@ -48,12 +48,23 @@
 #define BIT_CLEAR 				(0xF)	/* 4-bit BIT CLEAR ~(BIT_CLEAR) 	*/
 #define ALT_INPUT_FLOATING 		(0x4)	/* 4-bit ALT INPUT FLOATING 0b0010  */
 #define ALT_PUSH_PULL 			(0xB)	/* 4-bit ALT PUSH PULL 0b1011		*/
+#define BKEL_INPUT_PULL			(0x8)	/* 4-bit PULL-UP/DOWN INPUT 0b1000	*/
+#define BKEL_OUTPUT_PULL		(0x1)	/* 4-bit PULL-UP/DOWN OUTPUT 0b0001	*/
 /* SET VALUES */
 #define PWM_MODE_1				(6U)	/* PWM MODE 1 (In OC1M , set 110)	*/
 #define PWM_DUTY_PERCENT_0		(0U)	/* DUTY 0% 						*/
 #define PWM_DUTY_PERCENT_50		(0.5)	/* DUTY 50% 						*/
 #define PWM_DUTY_PERCENT_100	(1.0)	/* DUTY 100% 						*/
-
+/* GPIO PORT */
+#define GPIOC_RESET				(1U << 4)	/* GPIOC RESET 	*/
+#define GPIOA_RESET				(1U << 2)	/* GPIOA RESET 	*/
+#define AFIO_RESET				(1U)		/* AFIO RESET	*/
+/* GPIO PIN */
+#define GPIO_PIN_LD2			(5U)		/* GPIOA PIN5: LD2 	*/
+#define GPIO_PIN_INPUT			(0U)		/* GPIOC PIN0: INPUT */
+#define GPIO_PIN_OUTPUT			(1U)		/* GPIOC PIN1: OUTPUT */
+#define GPIO_PIN_B1				(13U-8U)	/* GPIOC PIN13: BTN1 */
+#define EXTI_PIN13				(1U)		/* EXTI13 [7:4] */
 
 ADC_HandleTypeDef hadc1;
 UART_HandleTypeDef huart2;
@@ -62,12 +73,15 @@ UART_HandleTypeDef huart2;
 static void BKEL_CLK_Init(void);
 
 //void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
+static void BKEL_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 
 // 25.12.27 SJKANG
 static void BKEL_PWM_Init(void);
+
+// 25.12.28 DHKWON
+static void BKEL_GPIO_Init(void);
 
 #ifdef USE_UART_DEBUG
 int _write(int file, char *ptr, int len)
@@ -84,9 +98,9 @@ void system_init(void)
 	HAL_Init();
 	// SystemClock_Config();
 	BKEL_CLK_Init();
-	MX_GPIO_Init();
+	BKEL_GPIO_Init();
 	MX_USART2_UART_Init();
-	MX_ADC1_Init();
+//	MX_ADC1_Init();
 	BKEL_PWM_Init();
 }
 
@@ -199,36 +213,39 @@ static void MX_USART2_UART_Init(void)
   * @param None
   * @retval None
   */
-static void MX_GPIO_Init(void)
+
+
+static void BKEL_GPIO_Init(void)
 {
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
+	RCC->APB2ENR &= ~(0xff << 4);
+	RCC->APB2ENR = (GPIOA_RESET | GPIOC_RESET | AFIO_RESET);
 
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
+	/* PIN MAP */
+	/* PA5: GPIO_PIN_LD2 */
+	GPIOA->CRL &= ~(BIT_CLEAR << (GPIO_PIN_LD2 * 4));
+	GPIOA->CRL |= (BKEL_OUTPUT_PULL << (GPIO_PIN_LD2 * 4));
+	/* PC0: GPIO_PIN_INPUT */
+	GPIOC->CRL &= ~(BIT_CLEAR << (GPIO_PIN_INPUT * 4));
+	GPIOC->CRL |= (BKEL_INPUT_PULL << (GPIO_PIN_INPUT * 4));
+	GPIOC->ODR = (1U << 0);		// SET PULL-UP
+	/* PC1: GPIO_PIN_OUTPUT */
+	GPIOC->CRL &= ~(BIT_CLEAR << (GPIO_PIN_OUTPUT * 4));
+	GPIOC->CRL |= (BKEL_OUTPUT_PULL << (GPIO_PIN_OUTPUT * 4));
+	/* PC13: GPIO_PIN_B1 */
+	GPIOC->CRH &= ~(BIT_CLEAR << (GPIO_PIN_B1 * 4));
+	GPIOC->CRH |= (BKEL_INPUT_PULL << (GPIO_PIN_B1 * 4));
+	/* PC13: EXTI13 CLEAR 0010: PC[x] pin*/
+	AFIO->EXTICR[3] &= ~(BIT_CLEAR << (EXTI_PIN13 * 4));
+	AFIO->EXTICR[3] |= (0X2 << 4);
+	/*  */
+	EXTI->IMR &= ~(1 << 13);
+	EXTI->IMR |= (1 << 13);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+	EXTI->RTSR &= ~(1 << 13);
+	EXTI->RTSR |= (1 << 13);
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-
+	NVIC_SetPriority(EXTI15_10_IRQn, 5);
+	NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
 
