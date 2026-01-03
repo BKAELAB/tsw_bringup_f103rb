@@ -110,8 +110,8 @@ void system_init(void)
 {
 	HAL_Init();
 	// SystemClock_Config();
-	BKEL_CLK_Init();			// 하드웨어 72MHz로 변경
-	SystemCoreClockUpdate();	// BKEL_CLK_Init()으로 인한
+	BKEL_CLK_Init();			// 8MHz -> 72MHz
+	SystemCoreClockUpdate();	// Hal_UART 사용하기 위해
 	BKEL_GPIO_Init();
 	MX_USART2_UART_Init();
 //	MX_ADC1_Init();
