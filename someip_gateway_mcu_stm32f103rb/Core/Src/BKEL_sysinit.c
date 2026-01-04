@@ -131,7 +131,6 @@ static void BKEL_CLK_Init(void);
 //void SystemClock_Config(void);
 static void BKEL_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_ADC1_Init(void);
 
 // 26.01.02 Hwang SeokJun
 static void BKEL_ADC1_DMA_Init(void);
