@@ -6,9 +6,6 @@
  */
 #include "main.h"
 
-/* Variables */
-volatile uint16_t adc_dma_buf[ADC_DMA_BUF_LEN];		// 프로그램 코드 외부에 있는 어떤 요인에 의해 변경될 수 있음
-
 /* DEFINES For CLOCK */
 /* FLASH 설정 */
 #define FLASH_ACR_PRFTBE_EN         (1U << 4)       // Prefetch buffer enable
@@ -39,59 +36,6 @@ volatile uint16_t adc_dma_buf[ADC_DMA_BUF_LEN];		// 프로그램 코드 외부�
 #define RCC_CFGR_SW_CLEAR         	(0x3U << 0)
 #define RCC_CFGR_SWS_CLEAR        	(0x3U << 2)
 
-
-/* DEFINES For ADC & DMA */
-
-/* RCC */
-#define RCC_ADC_PRE        			14U
-#define RCC_ADC_PRE_CLEAR         	0x3U
-#define RCC_ADC_PRE_DIV6         	0x2U
-#define RCC_IOPC_EN           		(1U << 4)
-#define RCC_ADC1_EN           		(1U << 9)
-#define RCC_DMA1_EN           		(1U << 0)
-
-/* GPIO */
-#define GPIO_ANALOG_MODE          	0xFU
-#define GPIO_PC4            	 	16U
-#define GPIO_PC5                 	20U
-
-/* DMA */
-#define DMA_EN		              	(1U << 0)
-#define DMA_CIRCULAR_EN           	(1U << 5)
-#define DMA_MINC_EN               	(1U << 7)
-#define DMA_PSIZE_16BIT           	(1U << 8)
-#define DMA_MSIZE_16BIT           	(1U << 10)
-
-/* ADC  */
-/* DR */
-#define ADC1_DR_ADDR    			(0x4001244C)	// ADC1 : 0x4001 2400, ADC_DR : 0x4C
-
-/* CR1 */
-#define ADC_SCAN_EN           		(1U << 8)
-
-/* CR2 */
-#define ADC_POWER_ON              	(1U << 0)
-#define ADC_CONT_EN           	  	(1U << 1)
-#define ADC_CAL_EN                	(1U << 2)
-#define ADC_RSTCAL_EN            	(1U << 3)
-#define ADC_DMA_EN                	(1U << 8)
-#define ADC_SWSTART_EN            	(1U << 22)
-
-/* Sampling Time */
-#define ADC_SMPR_CLEAR      		0x7U
-#define ADC_SMPR_239_5CYC         	0x7U
-#define ADC_SMPR_CH14      		  	12U
-#define ADC_SMPR_CH15      		  	15U
-
-/* Regular Sequence */
-#define ADC_SQ_LEN         			(0xFU << 20)
-#define ADC_SQ_LEN_2CH         		(1U << 20)
-#define ADC_SQ1_POS              	0U
-#define ADC_SQ2_POS              	5U
-
-/* ADC Channels */
-#define ADC_CH14                  	14U
-#define ADC_CH15                  	15U
 
 /* DEFINES For PWM & TIMER */
 /* TIMER & CLK*/
@@ -131,9 +75,7 @@ static void BKEL_CLK_Init(void);
 //void SystemClock_Config(void);
 static void BKEL_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-
-// 26.01.02 Hwang SeokJun
-static void BKEL_ADC1_DMA_Init(void);
+static void MX_ADC1_Init(void);
 
 // 25.12.27 SJKANG
 static void BKEL_PWM_Init(void);
@@ -157,7 +99,6 @@ void system_init(void)
 	BKEL_CLK_Init();
 	BKEL_GPIO_Init();
 	MX_USART2_UART_Init();
-	BKEL_ADC1_DMA_Init();
 	BKEL_PWM_Init();
 }
 
@@ -206,6 +147,7 @@ static void BKEL_CLK_Init(void)
     RCC->CFGR &= ~(RCC_CFGR_SW_CLEAR);           								// SW 초기화
     RCC->CFGR |= (RCC_CFGR_SW_PLL_VAL);            								// PLL selected as system clock
     while ((RCC->CFGR & (RCC_CFGR_SWS_CLEAR)) != (RCC_CFGR_SWS_PLL_STATUS));	// 시스템 클럭이 실제로 PLL로 바뀌었는지 확인
+    SystemCoreClockUpdate();
 }
 
 /**
@@ -213,74 +155,34 @@ static void BKEL_CLK_Init(void)
   * @param None
   * @retval None
   */
-static void BKEL_ADC1_DMA_Init(void)
+static void MX_ADC1_Init(void)
 {
-	// PC4,5 = ADC1_IN14, 15
-	RCC->APB2ENR |= RCC_IOPC_EN | RCC_ADC1_EN;	// GPIOC, ADC1 Enable
-	RCC->AHBENR  |= RCC_DMA1_EN;						// DMA1 Enable
 
-	// PC4, PC5 Analog Mode
-	GPIOC->CRL &= ~((GPIO_ANALOG_MODE << GPIO_PC4) |
-					(GPIO_ANALOG_MODE << GPIO_PC5));
+  ADC_ChannelConfTypeDef sConfig = {0};
 
-	/* ADC 클럭 분주: PCLK2 / 6 = 12MHz (최대 14MHz) */
-	RCC->CFGR &= ~(RCC_ADC_PRE_CLEAR << RCC_ADC_PRE);
-	RCC->CFGR |=  (RCC_ADC_PRE_DIV6 << RCC_ADC_PRE);
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
-	/* DMA1 Channel 1 설정 (ADC1 전용 채널) */
-    DMA1_Channel1->CCR &= ~DMA_EN; 			// Disable
-
-    // 채널이 enabled 되어 있는 동안 이 레지스터에 값을 written x
-    // This register must not be written when the channel is enabled
-    DMA1_Channel1->CPAR  = (uint32_t)ADC1_DR_ADDR;
-    DMA1_Channel1->CMAR  = (uint32_t)adc_dma_buf;      	// 메모리 주소
-    DMA1_Channel1->CNDTR = ADC_DMA_BUF_LEN;            	// 전송 개수
-
-    DMA1_Channel1->CCR = 0;
-    DMA1_Channel1->CCR |= DMA_CIRCULAR_EN;  	// CIRC: 원형 버퍼 (무한 루프)
-    DMA1_Channel1->CCR |= DMA_MINC_EN;  		// MINC: 메모리 주소 자동 증가
-    DMA1_Channel1->CCR |= DMA_PSIZE_16BIT;  		// PSIZE: 16-bit
-    DMA1_Channel1->CCR |= DMA_MSIZE_16BIT;		// MSIZE: 16-bit
-
-    DMA1_Channel1->CCR |= DMA_EN;  			// DMA Enable
-
-    /* ADC 기본 설정 */
-    ADC1->CR1 = 0;
-    ADC1->CR1 |= ADC_SCAN_EN;             // SCAN 모드 활성화
-
-    ADC1->CR2 = 0;
-    ADC1->CR2 |= ADC_CONT_EN;  			// CONT: 연속 변환 모드
-    ADC1->CR2 |= ADC_DMA_EN;  			// DMA: 변환 결과를 DMA로 전송 활성화
-
-    /* 샘플링 타임 및 채널 순서 설정 (Channel 14, 15) */
-    ADC1->SMPR1 &= ~((ADC_SMPR_CLEAR << ADC_SMPR_CH14) |
-    				(ADC_SMPR_CLEAR << ADC_SMPR_CH15)); // 채널 14, 15 초기화
-    ADC1->SMPR1 |=  (ADC_SMPR_239_5CYC << ADC_SMPR_CH14) |
-    				(ADC_SMPR_239_5CYC << ADC_SMPR_CH15); // 239.5 Cycles
-
-    /* 채널 순서 및 개수 설정 (PC4, PC5 읽기) */
-    ADC1->SQR1 &= ~ADC_SQ_LEN;
-    ADC1->SQR1 |=  ADC_SQ_LEN_2CH;                  // L=1 (2개 채널을 읽음)
-
-    ADC1->SQR3 = 0;
-    ADC1->SQR3 |= (ADC_CH14 << ADC_SQ1_POS);                    // 첫 번째 순서: PC4 (채널 14)
-    ADC1->SQR3 |= (ADC_CH15 << ADC_SQ2_POS);                    // 두 번째 순서: PC5 (채널 15)
-
-    ADC1->CR2 |= ADC_POWER_ON;      				// ADC ON (power on)
-    for (volatile int i = 0; i < 10000; i++);   // 안정화 대기
-
-    // ADC 파워업 시간(안정화 시간)이 지난 후, 소프트웨어에 의해 ADON 비트가 두 번째로 설정될 때 변환이 시작
-    /* p218. Conversion starts when ADON bit is set for a second time by software after ADC power-up
-    time (tSTAB). */
-    ADC1->CR2 |= ADC_POWER_ON;      				// ADC ON (ready)
-
-    ADC1->CR2 |= ADC_RSTCAL_EN;       				// RSTCAL: 캘리브레이션 레지스터 초기화 후 끝날 때까지 대기
-    while (ADC1->CR2 & ADC_RSTCAL_EN);
-
-    ADC1->CR2 |= ADC_CAL_EN;       				// CAL: 캘리브레이션 시작. 상태에 맞춰 오차를 자동으로 보정
-    while (ADC1->CR2 & ADC_CAL_EN);
-
-    ADC1->CR2 |= ADC_SWSTART_EN;	// SWSTART : 측정 시작
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
 /**
