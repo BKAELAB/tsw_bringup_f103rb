@@ -58,6 +58,12 @@ void f_sendPeriodAdvertiseTask(void)
 		GPIOC->BSRR = (1U << 1);
 		uint8_t pc0_val = (GPIOC->IDR & 1) == 1 ? 1 : 0;
 		uint16_t PC1_VALUE = (GPIOC->IDR & (1 << 1)) ? 1 : 0;
+
+		for(int i = 0; i < (ADC_DMA_BUF_LEN / 2); i++) {
+			adc_pc4[i] = adc_dma_buf[i * 2];
+			adc_pc5[i] = adc_dma_buf[i * 2 + 1];
+		}
+
 #endif
 		vTaskDelay(pdMS_TO_TICKS(5000));	// 5s
 	}
